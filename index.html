@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>社區散步友善地圖</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin=""/>
+  <style>
+    :root{--accent:#2b8cff}
+    html,body{height:100%;margin:0;font-family:system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans CJK TC", "Microsoft JhengHei", Arial}
+    #app{display:flex;height:100vh;gap:0}
+    #sidebar{width:360px;min-width:260px;max-width:420px;padding:16px;box-sizing:border-box;background:#fff;overflow:auto;border-right:1px solid #eee}
+    @media(max-width:800px){#sidebar{position:absolute;z-index:1000;left:8px;top:8px;width:calc(100% - 16px);max-height:45vh;border-radius:8px;box-shadow:0 6px 20px rgba(0,0,0,0.12)}}
+    h1{font-size:18px;margin:0 0 8px}
+    .controls{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px}
+    .controls button, .controls input[type=search]{padding:8px 10px;border-radius:6px;border:1px solid #ddd;background:#fafafa}
+    #map{flex:1}
+    .place{padding:10px;border-radius:8px;border:1px solid #f0f0f0;margin-bottom:8px;background:#fff;display:flex;gap:8px;align-items:center}
+    .place img{width:64px;height:48px;object-fit:cover;border-radius:6px}
+    .place h3{margin:0;font-size:15px}
+    .badge{display:inline-block;padding:4px 8px;border-radius:12px;font-size:12px;background:#f3f7ff;color:var(--accent)}
+    .category-list{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
+    label.small{font-size:13px}
+    .geo-btn{display:inline-flex;align-items:center;gap:6px}
+  </style>
+</head>
+<body>
+  <div id="app">
+    <aside id="sidebar">
+      <h1>社區散步友善地圖</h1>
+      <div class="controls">
+        <input id="search" type="search" placeholder="搜尋地點或關鍵字">
+        <button id="locateBtn" class="geo-btn">顯示我的位置</button>
+        <button id="resetBtn">重置視窗</button>
+      </div>
+      <div>
+        <div class="category-list" id="categoryList"></div>
+      </div>
+      <div id="placesList"></div>
+    </aside>
+    <div id="map"></div>
+  </div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+  <script>
+    const markers = [
+      {id:1, title:'永安公園長椅', lat:25.0330, lng:121.5654, category:'休息點', desc:'有遮蔭與兩張長椅，平坦路面', img:''},
+      {id:2, title:'社區活動中心', lat:25.0342, lng:121.5661, category:'服務', desc:'有公廁、室內座位，老人活動常在此集合', img:''},
+      {id:3, title:'河堤步道入口', lat:25.0355, lng:121.5632, category:'步道', desc:'平坦與緩坡混合，景觀好', img:''},
+      {id:4, title:'便利商店（補水）', lat:25.0338, lng:121.5645, category:'補給', desc:'24 小時便利商店，可買水與簡單點心', img:''}
+    ];
+
+    const map = L.map('map').setView([markers[0].lat, markers[0].lng],16);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19, attribution:'&copy; OpenStreetMap contributors'}).addTo(map);
+
+    const categories = [...new Set(markers.map(m=>m.category))];
+    const layerGroups = {};
+    categories.forEach(cat => layerGroups[cat]=L.layerGroup().addTo(map));
+
+    const markerObjs = {};
+    markers.forEach(m=>{
+      const marker = L.marker([m.lat,m.lng]);
+      marker.bindPopup(`<strong>${m.title}</strong><p>${m.desc}</p>`);
+      marker.on('click', ()=>{
+        const el = document.querySelector(`[data-id='${m.id}']`);
+        if(el){el.scrollIntoView({behavior:'smooth',block:'center'});el.style.boxShadow='0 6px 18px rgba(0,0,0,0.08)'; setTimeout(()=>el.style.boxShadow='',900)}
+      });
+      marker.addTo(layerGroups[m.category]);
+      markerObjs[m.id]=marker;
+    });
+
+    const categoryList = document.getElementById('categoryList');
+    categories.forEach(cat=>{
+      const id=`cat_${cat.replace(/\s/g,'_')}`;
+      const label=document.createElement('label'); label.className='small';
+      const cb=document.createElement('input'); cb.type='checkbox'; cb.checked=true; cb.dataset.cat=cat; cb.id=id;
+      cb.addEventListener('change', ()=>{cb.checked?map.addLayer(layerGroups[cat]):map.removeLayer(layerGroups[cat]); renderList();});
+      label.appendChild(cb); label.appendChild(document.createTextNode(' '+cat));
+      categoryList.appendChild(label);
+    });
+
+    const placesList = document.getElementById('placesList');
+    function renderList(filterText=''){
+      placesList.innerHTML='';
+      const activeCats = Array.from(document.querySelectorAll('#categoryList input:checked')).map(i=>i.dataset.cat);
+      const filtered = markers.filter(m=>activeCats.includes(m.category)&&(m.title.includes(filterText)||m.desc.includes(filterText)||filterText===''));
+      filtered.forEach(m=>{
+        const div=document.createElement('div'); div.className='place'; div.dataset.id=m.id;
+        const img=document.createElement('img'); img.src=m.img||'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="160" height="120"><rect width="100%" height="100%" fill="%23eee"/><text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" fill="%23999" font-size="12">No Image</text></svg>';
+        const right=document.createElement('div'); right.style.flex='1';
+        const h3=document.createElement('h3'); h3.textContent=m.title;
+        const p=document.createElement('p'); p.style.margin='6px 0 0'; p.style.fontSize='13px'; p.textContent=m.desc;
+        const b=document.createElement('div'); b.className='badge'; b.textContent=m.category;
+        right.appendChild(h3); right.appendChild(p); right.appendChild(b);
+        div.appendChild(img); div.appendChild(right);
+        div.addEventListener('click', ()=>{map.setView([m.lat,m.lng],18,{animate:true}); markerObjs[m.id].openPopup();});
+        placesList.appendChild(div);
+      });
+    }
+    renderList();
+
+    const search = document.getElementById('search');
+    let searchTimeout=null;
+    search.addEventListener('input', ()=>{clearTimeout(searchTimeout); searchTimeout=setTimeout(()=>{renderList(search.value.trim());},250);});
+
+    document.getElementById('locateBtn').addEventListener('click', ()=>{
+      if(!navigator.geolocation){alert('此裝置不支援定位'); return;}
+      navigator.geolocation.getCurrentPosition(pos=>{
+        const {latitude,longitude}=pos.coords;
+        L.circle([latitude,longitude],{radius:30,color:'var(--accent)'}).addTo(map);
+        map.setView([latitude,longitude],17);
+      }, err=>{alert('無法取得位置：'+err.message);});
+    });
+
+    document.getElementById('resetBtn').addEventListener('click', ()=>{map.setView([markers[0].lat,markers[0].lng],16);});
+    window.addEventListener('resize', ()=>{map.invalidateSize();});
+  </script>
+</body>
+</html>
